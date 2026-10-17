@@ -19,12 +19,47 @@ use Soneso\StellarSDK\Responses\Operations\ChangeTrustOperationResponse;
 class SofizPaySDK {
     private StellarSDK $sdk;
     private bool $isSandbox;
+    public const VERSION = '1.1.11';
     public const DZT_ASSET_CODE = 'DZT';
     public const DZT_ASSET_ISSUER = 'GCAZI7YBLIDJWIVEL7ETNAZGPP3LC24NO6KAOBWZHUERXQ7M5BC52DLV';
 
-    public function __construct(string $horizonUrl = 'https://horizon.stellar.org', bool $isSandbox = false) {
+    public function __construct(string|array $horizonUrl = 'https://horizon.stellar.org', bool $isSandbox = false) {
+        if (is_array($horizonUrl)) {
+            $network = strtoupper($horizonUrl['network'] ?? '');
+            $isSandbox = ($network === 'TESTNET') || !empty($horizonUrl['isSandbox']) || !empty($horizonUrl['sandbox']);
+            $horizonUrl = $horizonUrl['horizonUrl'] ?? ($isSandbox ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org');
+        }
         $this->sdk = new StellarSDK($horizonUrl);
         $this->isSandbox = $isSandbox;
+    }
+
+    /**
+     * Get SDK Version
+     */
+    public function getVersion(): string {
+        return self::VERSION;
+    }
+
+    /**
+     * Extract Stellar public key from secret key
+     */
+    public function getPublicKey(string $secretKey): array {
+        try {
+            $keyPair = KeyPair::fromSeed($secretKey);
+            return [
+                'success' => true,
+                'publicKey' => $keyPair->getAccountId(),
+                'secretKey' => $secretKey,
+                'timestamp' => date('c')
+            ];
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+                'publicKey' => null,
+                'timestamp' => date('c')
+            ];
+        }
     }
 
     /**
@@ -314,7 +349,11 @@ class SofizPaySDK {
      * Web API Services
      */
     public function makeCIBTransaction(array $params): array {
-        return $this->_makeCIBRequest($params, false);
+        $isSandbox = (bool) (
+            isset($params['is_sandbox']) ? $params['is_sandbox'] :
+            (isset($params['isSandbox']) ? $params['isSandbox'] : $this->isSandbox)
+        );
+        return $this->_makeCIBRequest($params, $isSandbox);
     }
 
     /**
@@ -328,27 +367,76 @@ class SofizPaySDK {
         $baseUrl = $useSandbox
             ? 'https://sofizpay.com/sandbox/make-cib-transaction/'
             : 'https://www.sofizpay.com/make-cib-transaction/';
+
         $queryParams = [
+            'account' => $params['account'] ?? '',
+            'amount' => (string)($params['amount'] ?? 0),
+            'full_name' => $params['full_name'] ?? '',
+            'phone' => $params['phone'] ?? '',
+            'email' => $params['email'] ?? '',
+        ];
+
+        if (!empty($params['return_url'])) $queryParams['return_url'] = $params['return_url'];
+        if (!empty($params['webhook_url'])) $queryParams['webhook_url'] = $params['webhook_url'];
+        if (!empty($params['invoice_id'])) $queryParams['invoice_id'] = $params['invoice_id'];
+        if (!empty($params['language'])) $queryParams['language'] = $params['language'];
+        if (!empty($params['memo'])) $queryParams['memo'] = $params['memo'];
+
+        if (isset($params['redirect'])) {
+            $queryParams['redirect'] = is_bool($params['redirect'])
+                ? ($params['redirect'] ? 'yes' : 'no')
+                : $params['redirect'];
+        } else {
+            $queryParams['redirect'] = 'no';
+        }
+
+        if (isset($params['keep_return_url'])) {
+            $queryParams['keep_return_url'] = is_bool($params['keep_return_url'])
+                ? ($params['keep_return_url'] ? 'True' : 'False')
+                : $params['keep_return_url'];
+        }
+
+        $res = $this->_get($baseUrl, $queryParams);
+
+        if (!$res['success']) {
+            return [
+                'success' => false,
+                'error' => $res['error'] ?? 'Transaction failed',
+                'account' => $params['account'] ?? '',
+                'amount' => $params['amount'] ?? 0,
+                'timestamp' => date('c')
+            ];
+        }
+
+        $data = $res['data'];
+        $paymentUrl = $data['payment_url'] ?? $data['cib_response']['formUrl'] ?? null;
+
+        return [
+            'success' => ($data['status'] ?? '') !== 'error' && ($data['success'] ?? true) !== false,
+            'data' => $data,
+            'payment_url' => $paymentUrl,
+            'transaction_id' => $data['transaction_id'] ?? null,
+            'cib_transaction_id' => $data['cib_transaction_id'] ?? null,
+            'order_id' => $data['order_id'] ?? null,
+            'webhook_url' => $data['webhook_url'] ?? $params['webhook_url'] ?? null,
             'account' => $params['account'] ?? '',
             'amount' => $params['amount'] ?? 0,
             'full_name' => $params['full_name'] ?? '',
             'phone' => $params['phone'] ?? '',
             'email' => $params['email'] ?? '',
-            'redirect' => 'no'
+            'memo' => $params['memo'] ?? null,
+            'is_sandbox' => $useSandbox,
+            'timestamp' => date('c')
         ];
-        
-        if (!empty($params['return_url'])) $queryParams['return_url'] = $params['return_url'];
-        if (!empty($params['memo'])) $queryParams['memo'] = $params['memo'];
-
-        return $this->_get($baseUrl, $queryParams);
     }
 
     public function getProducts(?string $encSk = null): array {
         return $this->_get('https://sofizpay.com/services/get_products/', [], ['encrypted_sk' => $encSk]);
     }
 
-    public function checkCIBStatus(string $cibTransactionId): array {
-        return $this->_checkCIBStatusRequest($cibTransactionId, false);
+    public function checkCIBStatus(string $cibTransactionId, ?bool $isSandbox = null): array {
+        $useSandbox = $isSandbox !== null ? $isSandbox : $this->isSandbox;
+        return $this->_checkCIBStatusRequest($cibTransactionId, $useSandbox);
     }
 
     /**
@@ -406,7 +494,7 @@ class SofizPaySDK {
             $options = [
                 'headers' => [
                     'Accept' => 'application/json',
-                    'User-Agent' => 'SofizPay-PHP-SDK/1.0.2'
+                    'User-Agent' => 'SofizPay-PHP-SDK/' . self::VERSION
                 ]
             ];
             if (!empty($params)) {
@@ -445,7 +533,7 @@ class SofizPaySDK {
                 'headers' => [
                     'Content-Type' => 'application/json',
                     'Accept' => 'application/json',
-                    'User-Agent' => 'SofizPay-PHP-SDK/1.0.2'
+                    'User-Agent' => 'SofizPay-PHP-SDK/' . self::VERSION
                 ]
             ]);
             $content = $response->getBody()->getContents();
@@ -467,16 +555,83 @@ class SofizPaySDK {
         }
     }
 
-    public function verifySignature(array $data): bool {
-        if (empty($data['message']) || empty($data['signature_url_safe'])) return false;
+    /**
+     * Verify digital RSA signature of a callback / webhook notification
+     *
+     * @param array|string $verificationData Payload array or message string
+     * @param string|null $signature Signature string if verificationData is message
+     * @return bool True if signature is valid
+     */
+    public function verifySignature($verificationData, ?string $signature = null): bool {
+        $message = '';
+        $sig = '';
+
+        if (is_string($verificationData)) {
+            $message = $verificationData;
+            $sig = $signature ?? '';
+        } elseif (is_array($verificationData)) {
+            $message = $verificationData['message'] ?? '';
+            $sig = $verificationData['signature_url_safe'] ?? $verificationData['signature'] ?? '';
+        }
+
+        if (empty($message) || empty($sig)) {
+            return false;
+        }
 
         $publicKey = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1N+bDPxpqeB9QB0affr/\n02aeRXAAnqHuLrgiUlVNdXtF7t+2w8pnEg+m9RRlc+4YEY6UyKTUjVe6k7v2p8Jj\nUItk/fMNOEg/zY222EbqsKZ2mF4hzqgyJ3QHPXjZEEqABkbcYVv4ZyV2Wq0x0ykI\n+Hy/5YWKeah4RP2uEML1FlXGpuacnMXpW6n36dne3fUN+OzILGefeRpmpnSGO5+i\nJmpF2mRdKL3hs9WgaLSg6uQyrQuJA9xqcCpUmpNbIGYXN9QZxjdyRGnxivTE8awx\nTHV3WRcKrP2krz3ruRGF6yP6PVHEuPc0YDLsYjV5uhfs7JtIksNKhRRAQ16bAsj/\n9wIDAQAB\n-----END PUBLIC KEY-----";
 
-        $signature = str_replace(['-', '_'], ['+', '/'], $data['signature_url_safe']);
-        $signature .= str_repeat('=', (4 - strlen($signature) % 4) % 4);
-        $signature = base64_decode($signature);
+        $base64 = str_replace(['-', '_'], ['+', '/'], $sig);
+        while (strlen($base64) % 4 !== 0) {
+            $base64 .= '=';
+        }
+        $decodedSignature = base64_decode($base64, true);
 
-        $result = @openssl_verify($data['message'], $signature, $publicKey, OPENSSL_ALGO_SHA256);
+        if ($decodedSignature === false) {
+            return false;
+        }
+
+        $result = @openssl_verify($message, $decodedSignature, $publicKey, OPENSSL_ALGO_SHA256);
         return $result === 1;
     }
+
+    /**
+     * Helper method specifically to verify incoming webhook payloads
+     *
+     * @param array $webhookPayload Webhook payload array containing message and signature
+     * @return bool True if signature is valid
+     */
+    public function verifyWebhookSignature(array $webhookPayload): bool {
+        return $this->verifySignature($webhookPayload);
+    }
+
+    // ==========================================
+    // Backward-Compatibility Aliases
+    // ==========================================
+
+    /**
+     * Alias for getBalance() to match documentation
+     */
+    public function getDzdBalance(string $publicKey): array {
+        return $this->getBalance($publicKey);
+    }
+
+    /**
+     * Alias for getTransactions() to match documentation
+     */
+    public function getPaymentHistory(string $publicKey, int $limit = 50): array {
+        return $this->getTransactions($publicKey, $limit);
+    }
+
+    /**
+     * Alias for searchTransactionsByMemo() to match documentation
+     */
+    public function getTransactionsByMemo(string $publicKey, string $memo, int $limit = 50): array {
+        return $this->searchTransactionsByMemo($publicKey, $memo, $limit);
+    }
 }
+
+// Global class aliases for backward compatibility
+if (!class_exists('Sofiz\SofizPay\SofizPayClient', false)) {
+    class_alias(\SofizPay\SofizPaySDK::class, 'Sofiz\SofizPay\SofizPayClient');
+}
+

@@ -65,13 +65,13 @@ use SofizPay\SofizPaySDK;
 $sdk = new SofizPaySDK();
 
 // 1. Check DZT balance
-$balance = $sdk.getBalance('YOUR_PUBLIC_KEY');
+$balance = $sdk->getBalance('YOUR_PUBLIC_KEY');
 if ($balance['success']) {
     echo "💰 Balance: " . $balance['balance'] . " DZT\n";
 }
 
 // 2. Send a DZT payment
-$result = $sdk.submit([
+$result = $sdk->submit([
     'secretkey'            => 'YOUR_SECRET_KEY',      // 56-char Stellar seed starting with 'S'
     'destinationPublicKey' => 'RECIPIENT_PUBLIC_KEY', // Recipient's public key
     'amount'               => '100.0',                // Amount in DZT
@@ -255,94 +255,151 @@ if ($products['success']) {
 
 ---
 
-## 🏦 Bank Integration (CIB)
+## 🏦 Bank Integration (CIB & EDAHABIA)
 
-Generate secure Dahabia/CIB bank payment links.
+Generate secure Dahabia/CIB bank payment links with optional real-time webhook callbacks.
 
 ```php
-$result = $sdk.makeCIBTransaction([
-    'account'    => 'YOUR_STELLAR_PUBLIC_KEY',    // Your merchant Stellar public key
-    'amount'     => 2500,                         // Amount in DZD (Algerian Dinars)
-    'full_name'  => 'Ahmed Benali',               // Customer's full name
-    'phone'      => '0661234567',                 // Customer's phone number
-    'email'      => 'ahmed@example.com',           // Customer's email
-    'memo'       => 'Order #789',                 // Internal order reference
-    'return_url' => 'https://yoursite.com/callback', // Redirect after payment
-    'redirect'   => 'no'                          // 'yes' for auto-redirect
+$result = $sdk->makeCIBTransaction([
+    'account'     => 'YOUR_STELLAR_PUBLIC_KEY',       // Your merchant Stellar public key
+    'amount'      => 2500,                            // Amount in DZD (Algerian Dinars)
+    'full_name'   => 'Ahmed Benali',                  // Customer's full name
+    'phone'       => '0661234567',                    // Customer's phone number
+    'email'       => 'ahmed@example.com',              // Customer's email
+    'memo'        => 'Order #789',                    // Internal order reference
+    'return_url'  => 'https://yoursite.com/callback', // Redirect after payment
+    'webhook_url' => 'https://yoursite.com/api/cib-webhook', // Asynchronous Webhook callback
+    'language'    => 'ar',                            // 'ar', 'fr', or 'en'
+    'redirect'    => 'no'                             // 'yes' for auto-redirect
 ]);
 
 if ($result['success']) {
-    // Get the generated hosted payment URL
-    $paymentUrl = $result['data']['payment_url'];
-    // Redirect the user to the payment gateway
-}
-```
-
-### 🧪 Sandbox Environment
-
-For safe testing without real money, use the dedicated sandbox methods. These methods always point to the SofizPay Sandbox environment.
-
-```php
-// 1. Generate a sandbox payment link
-$result = $sdk->makeSandboxCIBTransaction([
-    'account'   => 'YOUR_PUBLIC_KEY',
-    'amount'    => 150.0,
-    'full_name' => 'Sandbox Tester',
-    'phone'     => '0555000000',
-    'email'     => 'sandbox@example.com'
-]);
-
-if ($result['success']) {
-    echo "Sandbox URL: " . $result['data']['payment_url'] . "\n";
-    $cibId = $result['data']['cib_transaction_id'];
-
-    // 2. Check sandbox status
-    $status = $sdk->checkSandboxCIBStatus($cibId);
-    echo "Sandbox Status: " . $status['data']['status'] . "\n";
-}
-```
-
-### Check CIB Status (Production)
-
-To monitor the progress of a real CIB/Dahabia payment, use the `cib_transaction_id` returned in the `data` of the `makeCIBTransaction` response.
-
-```php
-// Check the status of a specific CIB transaction using its ID
-$status = $sdk->checkCIBStatus('CIB_TRANSACTION_ID');
-if ($status['success']) {
-    // Current status (e.g., 'success', 'pending', 'failed')
-    echo "Status: " . $status['data']['status'];
-}
-```
-
-### 💡 Best Practice: Secure Order Flow
-
-For maximum security, never expose the `cib_transaction_id` to the end-user. Always store it in your database and retrieve it server-side.
-
-```php
-// 1. Initiate payment and save the ID hidden from the user
-$result = $sdk.makeCIBTransaction([
-    'account' => 'YOUR_PUBLIC_KEY',
-    'amount'  => 5000,
-    'memo'    => 'Order #9988'
-]);
-
-if ($result['success']) {
-    $cibId = $result['data']['cib_transaction_id'];
-    // ✅ SAVE to database: UPDATE orders SET cib_hash = '$cibId' WHERE id = 9988;
+    // Top-level direct properties
+    $paymentUrl = $result['payment_url'];
+    $orderId = $result['cib_transaction_id'];
     
-    // Redirect user to payment page
-    header('Location: ' . $result['data']['payment_url']);
-}
-
-// 2. When checking status, retrieve from database
-$order = $db->getRepository(Order::class)->find(9988);
-$status = $sdk.checkCIBStatus($order->getCibHash());
-
-if ($status['success'] && $status['data']['status'] === 'success') {
-    // ✅ Mark order as PAID in your database
+    // Redirect customer to the SATIM checkout page
+    header('Location: ' . $paymentUrl);
+    exit;
 }
 ```
+
+---
+
+## 🧪 Sandbox Environment & Mock Cards
+
+The SofizPay Sandbox simulates the SATIM CIB/EDAHABIA payment system without connecting to real bank accounts.
+
+```php
+// Initialize SDK in Sandbox mode (or pass 'is_sandbox' => true)
+$sandboxSdk = new SofizPaySDK('https://horizon.stellar.org', true);
+
+$result = $sandboxSdk->makeSandboxCIBTransaction([
+    'account'     => 'YOUR_PUBLIC_KEY',
+    'amount'      => 150.0,
+    'full_name'   => 'Sandbox Tester',
+    'phone'       => '0555000000',
+    'email'       => 'sandbox@example.com',
+    'webhook_url' => 'https://yoursite.com/api/cib-webhook',
+    'return_url'  => 'https://yoursite.com/callback'
+]);
+
+if ($result['success']) {
+    echo "Sandbox Payment URL: " . $result['payment_url'] . "\n";
+    $cibId = $result['cib_transaction_id'];
+
+    // Check sandbox order status
+    $status = $sandboxSdk->checkSandboxCIBStatus($cibId);
+    echo "Order Status: " . ($status['data']['status'] ?? 'pending') . "\n";
+}
+```
+
+### Sandbox Test Cards
+
+Use the following test credentials on the sandbox payment page:
+
+| Card Number | Expiry | CVV | Cardholder Name | Result | Note |
+|-------------|--------|-----|-----------------|--------|------|
+| `6280581001234567` | `12/28` | `123` | `TEST SUCCESS` | ✅ Approved | Use OTP `123456` |
+| `6280581009876543` | `12/29` | `456` | `TEST SUCCESS TWO` | ✅ Approved | Use OTP `123456` |
+| `6280581005555555` | `06/28` | `999` | `TEST DECLINED` | ❌ Declined by issuer | Tests card refusal |
+| `6280581004444444` | `09/28` | `444` | `TEST INSUFFICIENT` | ❌ Insufficient funds | Tests insufficient balance |
+| `6280581003333333` | `03/21` | `333` | `TEST EXPIRED` | ❌ Expired card | Tests expired card |
+| `6280581002222222` | `11/28` | `222` | `TEST TIMEOUT` | ❌ Timeout | Tests transaction timeout |
+
+> [!TIP]
+> **OTP Code:** Always enter `123456` on the OTP page for approved tests. Entering any other OTP triggers an `Invalid OTP` error.
+
+---
+
+## 🔔 Webhooks & Signature Verification
+
+When a payment succeeds or fails, SofizPay delivers a server-to-server asynchronous HTTP `POST` event notification (`cib.payment.updated`) to your registered `webhook_url`.
+
+### Webhook Event Payload
+
+```json
+{
+  "event": "cib.payment.updated",
+  "payment_status": "success",
+  "transaction_id": "bb979126-4e55-49dd-8ecc-a1d59867d2b0",
+  "cib_transaction_id": "5965287001",
+  "order_number": 5965287001,
+  "order_status": 2,
+  "amount": 150000,
+  "currency": "012",
+  "resp_code": "00",
+  "resp_code_desc": "Approved",
+  "message": "https://yoursite.com/api/cib-webhook/success1500005965287001",
+  "signature": "MEQCIFz8v982hfkjdsf983274hfkjsdf...=="
+}
+```
+
+### Verifying Signatures (`verifyWebhookSignature`)
+
+Always verify the RSA SHA-256 signature before processing payments in your database:
+
+```php
+<?php
+// webhook.php
+require_once 'vendor/autoload.php';
+use SofizPay\SofizPaySDK;
+
+$sdk = new SofizPaySDK();
+
+// 1. Read input payload
+$payload = json_decode(file_get_contents('php://input'), true);
+
+// 2. Validate official digital signature
+if (!$sdk->verifyWebhookSignature($payload)) {
+    http_response_code(400);
+    echo "Invalid digital signature";
+    exit;
+}
+
+// 3. Process order upon confirmation
+if ($payload['payment_status'] === 'success') {
+    $orderNumber = $payload['order_number'] ?? $payload['cib_transaction_id'];
+    $amountInDZD = ($payload['amount'] ?? 0) / 100;
+    
+    // ✅ Mark order as PAID in your database:
+    // $db->updateOrder($orderNumber, ['status' => 'PAID', 'amount' => $amountInDZD]);
+}
+
+http_response_code(200);
+echo "OK";
+```
+
+---
+
+## 🔄 Return URL vs. Webhook Notifications
+
+| Feature | Return URL (`return_url`) | Webhook (`webhook_url`) |
+| :--- | :--- | :--- |
+| **Trigger mechanism** | Client browser redirect | Server-to-server direct HTTP POST |
+| **Reliability** | Can fail if user closes browser / network drops | Guaranteed server delivery |
+| **Security** | Susceptible to tampering | Cryptographically signed (RSA-2048) |
+| **Recommended use** | Display "Thank you" screen | Update database, activate subscriptions |
 
 ---
 
