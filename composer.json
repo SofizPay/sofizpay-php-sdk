@@ -1,5 +1,5 @@
 {
-  "name": "sofizpay/sofizpay-sdk-php",
+  "name": "sofizpay/sofizpay-php-sdk",
   "description": "The official SofizPay PHP SDK for digital payments, Stellar transactions, and Algerian bank deposits (CIB / Edahabiya).",
   "type": "library",
   "keywords": ["sofizpay", "payment", "sdk", "stellar", "algeria", "cib", "edahabiya", "dzt"],

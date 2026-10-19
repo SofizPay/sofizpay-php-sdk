@@ -4,7 +4,7 @@
   <h2>SofizPay PHP SDK</h2>
   <p><strong>The official PHP library for secure digital payments on the SofizPay platform.</strong></p>
 
-  [![Packagist Version](https://img.shields.io/packagist/v/sofizpay/sofizpay-sdk-php.svg)](https://packagist.org/packages/sofizpay/sofizpay-sdk-php)
+  [![Packagist Version](https://img.shields.io/packagist/v/sofizpay/sofizpay-php-sdk.svg)](https://packagist.org/packages/sofizpay/sofizpay-php-sdk)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
   [![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-blue.svg)](https://www.php.net/)
 </div>
@@ -44,7 +44,7 @@ The SofizPay PHP SDK provides a comprehensive interface for integrating **DZT di
 ### Composer
 
 ```bash
-composer require sofizpay/sofizpay-sdk-php
+composer require sofizpay/sofizpay-php-sdk
 ```
 
 **Requirements:** 
