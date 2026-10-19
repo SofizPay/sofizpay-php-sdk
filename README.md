@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://github.com/kenandarabeh/sofizpay-sdk/blob/main/assets/sofizpay-logo.png?raw=true" alt="SofizPay Logo" width="200" />
+  <img src="https://github.com/SofizPay/sofizpay-php-sdk/blob/main/assets/sofizpay-logo.png?raw=true" alt="SofizPay Logo" width="200" />
 
   <h2>SofizPay PHP SDK</h2>
   <p><strong>The official PHP library for secure digital payments on the SofizPay platform.</strong></p>

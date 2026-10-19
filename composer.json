@@ -1,13 +1,20 @@
 {
   "name": "sofizpay/sofizpay-sdk-php",
-  "description": "SofizPay SDK for PHP",
+  "description": "The official SofizPay PHP SDK for digital payments, Stellar transactions, and Algerian bank deposits (CIB / Edahabiya).",
   "type": "library",
+  "keywords": ["sofizpay", "payment", "sdk", "stellar", "algeria", "cib", "edahabiya", "dzt"],
+  "homepage": "https://sofizpay.com",
   "license": "MIT",
   "authors": [
     {
-      "name": "SofizPay Dev Team"
+      "name": "SofizPay Dev Team",
+      "email": "support@sofizpay.com"
     }
   ],
+  "support": {
+    "issues": "https://github.com/SofizPay/sofizpay-php-sdk/issues",
+    "source": "https://github.com/SofizPay/sofizpay-php-sdk"
+  },
   "require": {
     "php": ">=8.0",
     "soneso/stellar-php-sdk": "^1.1"
