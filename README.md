@@ -350,7 +350,7 @@ When a payment succeeds or fails, SofizPay delivers a server-to-server asynchron
   "currency": "012",
   "resp_code": "00",
   "resp_code_desc": "Approved",
-  "message": "https://yoursite.com/api/cib-webhook/success1500005965287001",
+  "message": "cibsuccess1500005965287001",
   "signature": "MEQCIFz8v982hfkjdsf983274hfkjsdf...=="
 }
 ```
@@ -360,12 +360,11 @@ When a payment succeeds or fails, SofizPay delivers a server-to-server asynchron
 Always verify the webhook before processing payments in your database.
 
 > ⚠️ **Use `verifyWebhookPayload`, not only `verifyWebhookSignature`.** The RSA signature covers only the
-> `message` string (`callback_url . payment_status . amount . order_number`). The top-level fields such as
+> `message` string (`"cib" . payment_status . amount . order_number`, e.g. `cibsuccess1500005965287001`). The top-level fields such as
 > `payment_status`, `amount` and `order_number` are **not** signed by themselves. `verifyWebhookPayload`
 > checks the signature **and** that those fields match the signed `message`, so they can be trusted.
 
 Recommended hardening:
-- Pass `$callbackUrl`, the URL prefix exactly as it appears at the start of `message` in a real webhook (including any trailing `/`), for an exact match.
 - Check that `amount` equals the amount you stored for that order.
 - Process each order only once (webhooks can be replayed).
 
@@ -381,8 +380,7 @@ $sdk = new SofizPaySDK();
 $payload = json_decode(file_get_contents('php://input'), true);
 
 // 2. Validate signature AND that payment_status / amount / order_number match the signed message
-$callbackUrl = 'https://yourstore.com/api/cib-webhook/'; // optional, recommended
-if (!is_array($payload) || !$sdk->verifyWebhookPayload($payload, $callbackUrl)) {
+if (!is_array($payload) || !$sdk->verifyWebhookPayload($payload)) {
     http_response_code(400);
     echo "Invalid webhook";
     exit;

@@ -19,7 +19,7 @@ use Soneso\StellarSDK\Responses\Operations\ChangeTrustOperationResponse;
 class SofizPaySDK {
     private StellarSDK $sdk;
     private bool $isSandbox;
-    public const VERSION = '1.2.0';
+    public const VERSION = '1.2.1';
     public const DZT_ASSET_CODE = 'DZT';
     public const DZT_ASSET_ISSUER = 'GCAZI7YBLIDJWIVEL7ETNAZGPP3LC24NO6KAOBWZHUERXQ7M5BC52DLV';
 
@@ -610,10 +610,12 @@ class SofizPaySDK {
      * unsigned top-level fields (payment_status, amount, order_number) match the signed
      * message. Use this before trusting any of those fields.
      *
-     * The signed message is callbackUrl . payment_status . amount . order_number.
+     * The signed message is exactly "cib" . payment_status . amount . order_number
+     * (e.g. cibsuccess50004790895316), verified against real sandbox and production webhooks.
      *
      * @param array $webhookPayload Decoded webhook JSON body
-     * @param string|null $callbackUrl Your webhook URL as registered with SofizPay; when given, the message must match it exactly
+     * @param string|null $callbackUrl Deprecated, ignored: the callback URL is not part of the signed
+     *                                 message. Accepted only so code written for 1.2.0 keeps working.
      * @return bool True only if the signature is valid and the fields are consistent
      */
     public function verifyWebhookPayload(array $webhookPayload, ?string $callbackUrl = null): bool {
@@ -634,12 +636,7 @@ class SofizPaySDK {
             return false;
         }
 
-        $signedFields = $status . $amount . $orderNumber;
-        $message = $webhookPayload['message'];
-        if ($callbackUrl !== null && $callbackUrl !== '') {
-            return hash_equals($callbackUrl . $signedFields, $message);
-        }
-        return strlen($message) > strlen($signedFields) && str_ends_with($message, $signedFields);
+        return hash_equals('cib' . $status . $amount . $orderNumber, $webhookPayload['message']);
     }
 
     // ==========================================
