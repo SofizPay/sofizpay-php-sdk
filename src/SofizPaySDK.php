@@ -19,7 +19,7 @@ use Soneso\StellarSDK\Responses\Operations\ChangeTrustOperationResponse;
 class SofizPaySDK {
     private StellarSDK $sdk;
     private bool $isSandbox;
-    public const VERSION = '1.1.11';
+    public const VERSION = '1.2.0';
     public const DZT_ASSET_CODE = 'DZT';
     public const DZT_ASSET_ISSUER = 'GCAZI7YBLIDJWIVEL7ETNAZGPP3LC24NO6KAOBWZHUERXQ7M5BC52DLV';
 
@@ -574,7 +574,8 @@ class SofizPaySDK {
             $sig = $verificationData['signature_url_safe'] ?? $verificationData['signature'] ?? '';
         }
 
-        if (empty($message) || empty($sig)) {
+        // Webhook JSON may carry any type here (array, int, null...); only non-empty strings are valid
+        if (!is_string($message) || !is_string($sig) || $message === '' || $sig === '') {
             return false;
         }
 
@@ -602,6 +603,43 @@ class SofizPaySDK {
      */
     public function verifyWebhookSignature(array $webhookPayload): bool {
         return $this->verifySignature($webhookPayload);
+    }
+
+    /**
+     * Verify a CIB webhook end to end: the RSA signature over `message` AND that the
+     * unsigned top-level fields (payment_status, amount, order_number) match the signed
+     * message. Use this before trusting any of those fields.
+     *
+     * The signed message is callbackUrl . payment_status . amount . order_number.
+     *
+     * @param array $webhookPayload Decoded webhook JSON body
+     * @param string|null $callbackUrl Your webhook URL as registered with SofizPay; when given, the message must match it exactly
+     * @return bool True only if the signature is valid and the fields are consistent
+     */
+    public function verifyWebhookPayload(array $webhookPayload, ?string $callbackUrl = null): bool {
+        if (!$this->verifyWebhookSignature($webhookPayload)) {
+            return false;
+        }
+
+        $toPart = static function ($value): ?string {
+            if (is_string($value)) return $value;
+            if (is_int($value)) return (string) $value;
+            return null;
+        };
+
+        $status = $toPart($webhookPayload['payment_status'] ?? null);
+        $amount = $toPart($webhookPayload['amount'] ?? null);
+        $orderNumber = $toPart($webhookPayload['order_number'] ?? null);
+        if ($status === null || $status === '' || $amount === null || $amount === '' || $orderNumber === null || $orderNumber === '') {
+            return false;
+        }
+
+        $signedFields = $status . $amount . $orderNumber;
+        $message = $webhookPayload['message'];
+        if ($callbackUrl !== null && $callbackUrl !== '') {
+            return hash_equals($callbackUrl . $signedFields, $message);
+        }
+        return strlen($message) > strlen($signedFields) && str_ends_with($message, $signedFields);
     }
 
     // ==========================================

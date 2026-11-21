@@ -355,9 +355,19 @@ When a payment succeeds or fails, SofizPay delivers a server-to-server asynchron
 }
 ```
 
-### Verifying Signatures (`verifyWebhookSignature`)
+### Verifying Webhooks (`verifyWebhookPayload`)
 
-Always verify the RSA SHA-256 signature before processing payments in your database:
+Always verify the webhook before processing payments in your database.
+
+> ⚠️ **Use `verifyWebhookPayload`, not only `verifyWebhookSignature`.** The RSA signature covers only the
+> `message` string (`callback_url . payment_status . amount . order_number`). The top-level fields such as
+> `payment_status`, `amount` and `order_number` are **not** signed by themselves. `verifyWebhookPayload`
+> checks the signature **and** that those fields match the signed `message`, so they can be trusted.
+
+Recommended hardening:
+- Pass `$callbackUrl`, the URL prefix exactly as it appears at the start of `message` in a real webhook (including any trailing `/`), for an exact match.
+- Check that `amount` equals the amount you stored for that order.
+- Process each order only once (webhooks can be replayed).
 
 ```php
 <?php
@@ -370,17 +380,19 @@ $sdk = new SofizPaySDK();
 // 1. Read input payload
 $payload = json_decode(file_get_contents('php://input'), true);
 
-// 2. Validate official digital signature
-if (!$sdk->verifyWebhookSignature($payload)) {
+// 2. Validate signature AND that payment_status / amount / order_number match the signed message
+$callbackUrl = 'https://yourstore.com/api/cib-webhook/'; // optional, recommended
+if (!is_array($payload) || !$sdk->verifyWebhookPayload($payload, $callbackUrl)) {
     http_response_code(400);
-    echo "Invalid digital signature";
+    echo "Invalid webhook";
     exit;
 }
 
-// 3. Process order upon confirmation
+// 3. Process order upon confirmation (only the signed fields are used)
 if ($payload['payment_status'] === 'success') {
-    $orderNumber = $payload['order_number'] ?? $payload['cib_transaction_id'];
-    $amountInDZD = ($payload['amount'] ?? 0) / 100;
+    $orderNumber = $payload['order_number'];
+    $amountInDZD = $payload['amount'] / 100;
+    // ✅ Also check $payload['amount'] equals the amount stored for this order, and process each order once
     
     // ✅ Mark order as PAID in your database:
     // $db->updateOrder($orderNumber, ['status' => 'PAID', 'amount' => $amountInDZD]);
